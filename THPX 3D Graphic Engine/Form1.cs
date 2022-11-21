@@ -14,9 +14,13 @@ namespace THPX_3D_Graphic_Engine
         private Pen _p;
         private Graphics _g;
         private Stopwatch _sW = new Stopwatch();
-        private bool _shouldClear;
-        private List<int> _fpsList = new List<int>();
-        private bool _isFilled;
+        private List<int> _fpsList = new List<int>(); // List holding the last fps values.
+        private bool _isFilled; // Has the _fpsList reached the _fpsCount number;
+        private int _fpsCount = 60; // How many frames are used to calculate average fps.
+        private int _updateDelay = 5; // (ms) Delay the next frame, so the lines have more time to draw (reduces fps!).
+
+        //Camera
+        private Vec3d _camera = new Vec3d(0, 0, 0);
 
         // Projection matrix parameters
         private float _fov = 90.0f;
@@ -164,7 +168,7 @@ namespace THPX_3D_Graphic_Engine
             {
                 int f = (int)(1 / elapsed );
 
-                if (_fpsList.Count < 10 && !_isFilled)
+                if (_fpsList.Count < _fpsCount && !_isFilled)
                 {
                     _fpsList.Add(f);
                 }
@@ -178,7 +182,7 @@ namespace THPX_3D_Graphic_Engine
 
                 _fps = (int)_fpsList.Average();
 
-                if (_fpsList.Count == 10)
+                if (_fpsList.Count == _fpsCount)
                 {
                     this.label1.Invoke((MethodInvoker)delegate
                     {
@@ -196,11 +200,7 @@ namespace THPX_3D_Graphic_Engine
         private void OnEngineUpdate(float fElapsedTime)
         {
             // Clear Screen
-            if (_shouldClear)
-            {
-                _g.Clear(Color.Black);
-                _shouldClear = false;
-            }
+            _g.Clear(Color.Black);
 
             // Angle changing in time
             _fTheta += fElapsedTime * 1.0f;
@@ -251,28 +251,47 @@ namespace THPX_3D_Graphic_Engine
                 triTranslated.p[1].z = triRotatedZX.p[1].z + 3.0f;
                 triTranslated.p[2].z = triRotatedZX.p[2].z + 3.0f;
 
-                /*triProjected.p[0] = Mat4x4.MultiplyMatrixVector(tri.p[0], _matProj);
-                triProjected.p[1] = Mat4x4.MultiplyMatrixVector(tri.p[1], _matProj);
-                triProjected.p[2] = Mat4x4.MultiplyMatrixVector(tri.p[2], _matProj);*/
-                
-                // Project triangles from 3D to 2D
-                triProjected.p[0] = Mat4x4.MultiplyMatrixVector(triTranslated.p[0], _matProj);
-                triProjected.p[1] = Mat4x4.MultiplyMatrixVector(triTranslated.p[1], _matProj);
-                triProjected.p[2] = Mat4x4.MultiplyMatrixVector(triTranslated.p[2], _matProj);
+                // Calculate triangle normal
+                Vec3d normal, line1, line2;
+                line1.x = triTranslated.p[1].x - triTranslated.p[0].x;
+                line1.y = triTranslated.p[1].y - triTranslated.p[0].y;
+                line1.z = triTranslated.p[1].z - triTranslated.p[0].z;
 
-                // Scale into view
-                triProjected.p[0].x += 1.0f; triProjected.p[0].y += 1.0f;
-                triProjected.p[1].x += 1.0f; triProjected.p[1].y += 1.0f;
-                triProjected.p[2].x += 1.0f; triProjected.p[2].y += 1.0f;
+                line2.x = triTranslated.p[2].x - triTranslated.p[0].x;
+                line2.y = triTranslated.p[2].y - triTranslated.p[0].y;
+                line2.z = triTranslated.p[2].z - triTranslated.p[0].z;
 
-                triProjected.p[0].x *= 0.5f * (float)this.Width;
-                triProjected.p[0].y *= 0.5f * (float)this.Height;
-                triProjected.p[1].x *= 0.5f * (float)this.Width;
-                triProjected.p[1].y *= 0.5f * (float)this.Height;
-                triProjected.p[2].x *= 0.5f * (float)this.Width;
-                triProjected.p[2].y *= 0.5f * (float)this.Height;
+                normal.x = line1.y * line2.z - line1.z * line2.y;
+                normal.y = line1.z * line2.x - line1.x * line2.z;
+                normal.z = line1.x * line2.y - line1.y * line2.x;
 
-                DrawTriangle(triProjected.p);
+                float l = (float)Math.Sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+                normal.x /= l; normal.y /= l; normal.z /= l;
+
+                //if (normal.z < 0)
+                if (normal.x * (triTranslated.p[0].x - _camera.x) +
+                    normal.y * (triTranslated.p[0].y - _camera.y) +
+                    normal.z * (triTranslated.p[0].z - _camera.z) < 0)
+                {
+                    // Project triangles from 3D to 2D
+                    triProjected.p[0] = Mat4x4.MultiplyMatrixVector(triTranslated.p[0], _matProj);
+                    triProjected.p[1] = Mat4x4.MultiplyMatrixVector(triTranslated.p[1], _matProj);
+                    triProjected.p[2] = Mat4x4.MultiplyMatrixVector(triTranslated.p[2], _matProj);
+
+                    // Scale into view
+                    triProjected.p[0].x += 1.0f; triProjected.p[0].y += 1.0f;
+                    triProjected.p[1].x += 1.0f; triProjected.p[1].y += 1.0f;
+                    triProjected.p[2].x += 1.0f; triProjected.p[2].y += 1.0f;
+
+                    triProjected.p[0].x *= 0.5f * (float)this.Width;
+                    triProjected.p[0].y *= 0.5f * (float)this.Height;
+                    triProjected.p[1].x *= 0.5f * (float)this.Width;
+                    triProjected.p[1].y *= 0.5f * (float)this.Height;
+                    triProjected.p[2].x *= 0.5f * (float)this.Width;
+                    triProjected.p[2].y *= 0.5f * (float)this.Height;
+
+                    DrawTriangle(triProjected.p);
+                }
             }
         }
 
@@ -290,8 +309,6 @@ namespace THPX_3D_Graphic_Engine
             pts[2].Y = (int)arg[2].y;
 
             _g.DrawPolygon(_p, pts);
-
-            _shouldClear = true;
         }
 
 
