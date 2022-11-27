@@ -8,16 +8,15 @@ namespace THPX_3D_Graphic_Engine
     public partial class Form1 : Form
     {
         private float _time;
+        private float _felapsed;
         private int _fps;
         private Mesh _meshCube;
         private SolidBrush _b;
         private Pen _p;
-        private Graphics _g;
         private Stopwatch _sW = new Stopwatch();
         private List<int> _fpsList = new List<int>(); // List holding the last fps values.
         private bool _isFilled; // Has the _fpsList reached the _fpsCount number;
-        private int _fpsCount = 60; // How many frames are used to calculate average fps.
-        private int _updateDelay = 5; // (ms) Delay the next frame, so the lines have more time to draw (reduces fps!).
+        private byte _fpsCount = 10; // How many frames are used to calculate average fps.
 
         //Camera
         private Vec3d _camera = new Vec3d(0, 0, 0);
@@ -51,9 +50,11 @@ namespace THPX_3D_Graphic_Engine
         {
             public Vec3d[] p;
 
+
             public Triangle(Vec3d a, Vec3d b, Vec3d c)
             {
                 p = new Vec3d[3] { a, b, c };
+
             }
         }
 
@@ -107,9 +108,6 @@ namespace THPX_3D_Graphic_Engine
                 return;
             }
 
-            // Graphics class instance
-            _g = this.CreateGraphics();
-
             // Solid Brush
             if (_b == null)
             {
@@ -118,7 +116,7 @@ namespace THPX_3D_Graphic_Engine
 
             if (_p == null)
             {
-                _p = new Pen(Color.White);
+                _p = new Pen(Color.Black);
             }
 
             // Populate fields
@@ -147,7 +145,6 @@ namespace THPX_3D_Graphic_Engine
             while (!worker.CancellationPending)
             {
                 RunEngineLoop();
-                Thread.Sleep(5);
             }
 
             Application.Exit();
@@ -160,13 +157,13 @@ namespace THPX_3D_Graphic_Engine
             float timeSpan = (float)_sW.ElapsedMilliseconds;
             
             // Get elapsed time from the last loop cycle (in seconds).
-            float elapsed = (timeSpan - _time) * 0.001f;
+            _felapsed = (timeSpan - _time) * 0.001f;
 
             _time = timeSpan;
 
-            if (elapsed != 0)
+            if (_felapsed != 0)
             {
-                int f = (int)(1 / elapsed );
+                int f = (int)(1 / _felapsed );
 
                 if (_fpsList.Count < _fpsCount && !_isFilled)
                 {
@@ -192,16 +189,19 @@ namespace THPX_3D_Graphic_Engine
                 
             }
 
-            OnEngineUpdate(elapsed);
+            if (!this.IsDisposed)
+            {
+                this.Invoke((MethodInvoker)delegate
+                {
+                    this.pictureBox1.Refresh();
+                });
+            }
         }
 
 
 
-        private void OnEngineUpdate(float fElapsedTime)
+        private void OnEngineUpdate(float fElapsedTime, Graphics g)
         {
-            // Clear Screen
-            _g.Clear(Color.Black);
-
             // Angle changing in time
             _fTheta += fElapsedTime * 1.0f;
 
@@ -273,6 +273,17 @@ namespace THPX_3D_Graphic_Engine
                     normal.y * (triTranslated.p[0].y - _camera.y) +
                     normal.z * (triTranslated.p[0].z - _camera.z) < 0)
                 {
+
+                    // Illumination
+                    Vec3d light_direction = new Vec3d(0.0f, 0.0f, -1.0f);
+
+                    float length = (float)Math.Sqrt(light_direction.x * light_direction.x + light_direction.y * light_direction.y + light_direction.z * light_direction.z);
+                    normal.x /= length; normal.y /= length; normal.z /= length;
+
+                    // How similiar is normal to light direction
+                    float dp = normal.x * light_direction.x + normal.y * light_direction.y + normal.z * light_direction.z;
+                    Color col = Color.FromArgb((int)(dp * 255), (int)(dp * 255), (int)(dp * 255));
+
                     // Project triangles from 3D to 2D
                     triProjected.p[0] = Mat4x4.MultiplyMatrixVector(triTranslated.p[0], _matProj);
                     triProjected.p[1] = Mat4x4.MultiplyMatrixVector(triTranslated.p[1], _matProj);
@@ -290,16 +301,17 @@ namespace THPX_3D_Graphic_Engine
                     triProjected.p[2].x *= 0.5f * (float)this.Width;
                     triProjected.p[2].y *= 0.5f * (float)this.Height;
 
-                    DrawTriangle(triProjected.p);
+                    DrawTriangle(triProjected.p, col, g);
                 }
             }
         }
 
 
 
-        private void DrawTriangle(Vec3d[] arg)
+        private void DrawTriangle(Vec3d[] arg, Color col, Graphics g)
         {
             Point[] pts =  new Point[3];
+            _b.Color = col;
 
             pts[0].X = (int)arg[0].x;
             pts[0].Y = (int)arg[0].y;
@@ -308,7 +320,8 @@ namespace THPX_3D_Graphic_Engine
             pts[2].X = (int)arg[2].x;
             pts[2].Y = (int)arg[2].y;
 
-            _g.DrawPolygon(_p, pts);
+            g.FillPolygon(_b, pts);
+            g.DrawPolygon(_p, pts);
         }
 
 
@@ -337,8 +350,16 @@ namespace THPX_3D_Graphic_Engine
             };
         }
 
-        private void Form1_Paint(object sender, PaintEventArgs e)
+        private void pictureBox1_Paint(object sender, PaintEventArgs e)
         {
+            OnEngineUpdate(_felapsed, e.Graphics);
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            this.Hide();
+            this.Parent = null;
+            e.Cancel = true;
         }
     }
 }
