@@ -1,16 +1,19 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Drawing;
-using System.Numerics;
 
 namespace THPX_3D_Graphic_Engine
 {
-    public partial class Form1 : Form
+    public partial class Main : Form
     {
+        // Public fields
+        public Mesh ObjMesh;
+
+
+
+        // Private fields
         private float _time;
         private float _felapsed;
         private int _fps;
-        private Mesh _meshCube;
         private SolidBrush _b;
         private Pen _p;
         private Stopwatch _sW = new Stopwatch();
@@ -18,8 +21,12 @@ namespace THPX_3D_Graphic_Engine
         private bool _isFilled; // Has the _fpsList reached the _fpsCount number;
         private byte _fpsCount = 10; // How many frames are used to calculate average fps.
 
+
+
         //Camera
         private Vec3d _camera = new Vec3d(0, 0, 0);
+
+
 
         // Projection matrix parameters
         private float _fov = 90.0f;
@@ -29,10 +36,14 @@ namespace THPX_3D_Graphic_Engine
         private float _fFovRad;
         private float _fTheta;
 
+
+
         // Projection matrix
         private Mat4x4 _matProj;
 
-        struct Vec3d
+
+
+        public struct Vec3d
         {
             public float x, y, z;
 
@@ -46,23 +57,23 @@ namespace THPX_3D_Graphic_Engine
 
 
         
-        struct Triangle
+        public struct Triangle
         {
             public Vec3d[] p;
+            public Color col = new Color();
 
 
             public Triangle(Vec3d a, Vec3d b, Vec3d c)
             {
                 p = new Vec3d[3] { a, b, c };
-
             }
         }
 
 
 
-        struct Mesh
+        public struct Mesh
         { 
-            public Triangle[] tris;
+            public List<Triangle> tris;
         }
 
 
@@ -93,7 +104,7 @@ namespace THPX_3D_Graphic_Engine
 
 
 
-        public Form1()
+        public Main()
         {
             InitializeComponent();
             backgroundWorker1.WorkerSupportsCancellation = true;
@@ -208,6 +219,9 @@ namespace THPX_3D_Graphic_Engine
             // Rotation matrices
             Mat4x4 matRotZ, matRotX;
 
+            // Depth buffer
+            List<Triangle> depthBuffer = new List<Triangle>();
+
             // z-axis
             matRotZ.mat4 = new float[4, 4];
             matRotZ.mat4[0, 0] = (float)Math.Cos(_fTheta);
@@ -226,8 +240,10 @@ namespace THPX_3D_Graphic_Engine
             matRotX.mat4[2, 2] = (float)Math.Cos(_fTheta * 0.5f);
             matRotX.mat4[3, 3] = 1.0f;
 
+            if (ObjMesh.tris == null) {  return; }
+
             // Draw triangles
-            foreach (Triangle tri in _meshCube.tris)
+            foreach (Triangle tri in ObjMesh.tris)
             {
                 Triangle triProjected, triTranslated, triRotatedZ, triRotatedZX;
 
@@ -241,6 +257,7 @@ namespace THPX_3D_Graphic_Engine
 
                 // Rotate in X axis
                 triRotatedZX.p = new Vec3d[3];
+                triRotatedZX.col = new Color();
                 triRotatedZX.p[0] = Mat4x4.MultiplyMatrixVector(triRotatedZ.p[0], matRotX);
                 triRotatedZX.p[1] = Mat4x4.MultiplyMatrixVector(triRotatedZ.p[1], matRotX);
                 triRotatedZX.p[2] = Mat4x4.MultiplyMatrixVector(triRotatedZ.p[2], matRotX);
@@ -278,11 +295,14 @@ namespace THPX_3D_Graphic_Engine
                     Vec3d light_direction = new Vec3d(0.0f, 0.0f, -1.0f);
 
                     float length = (float)Math.Sqrt(light_direction.x * light_direction.x + light_direction.y * light_direction.y + light_direction.z * light_direction.z);
-                    normal.x /= length; normal.y /= length; normal.z /= length;
+
+                    normal.x /= length;
+                    normal.y /= length;
+                    normal.z /= length;
 
                     // How similiar is normal to light direction
                     float dp = normal.x * light_direction.x + normal.y * light_direction.y + normal.z * light_direction.z;
-                    Color col = Color.FromArgb((int)(dp * 255), (int)(dp * 255), (int)(dp * 255));
+                    triProjected.col = Color.FromArgb(Math.Max(0, (int)(dp * 255)), Math.Max(0, (int)(dp * 255)), Math.Max(0, (int)(dp * 255)));
 
                     // Project triangles from 3D to 2D
                     triProjected.p[0] = Mat4x4.MultiplyMatrixVector(triTranslated.p[0], _matProj);
@@ -294,15 +314,41 @@ namespace THPX_3D_Graphic_Engine
                     triProjected.p[1].x += 1.0f; triProjected.p[1].y += 1.0f;
                     triProjected.p[2].x += 1.0f; triProjected.p[2].y += 1.0f;
 
-                    triProjected.p[0].x *= 0.5f * (float)this.Width;
-                    triProjected.p[0].y *= 0.5f * (float)this.Height;
-                    triProjected.p[1].x *= 0.5f * (float)this.Width;
-                    triProjected.p[1].y *= 0.5f * (float)this.Height;
-                    triProjected.p[2].x *= 0.5f * (float)this.Width;
-                    triProjected.p[2].y *= 0.5f * (float)this.Height;
+                    triProjected.p[0].x *= 0.5f * (float)this.pictureBox1.Width;
+                    triProjected.p[0].y *= 0.5f * (float)this.pictureBox1.Height;
+                    triProjected.p[1].x *= 0.5f * (float)this.pictureBox1.Width;
+                    triProjected.p[1].y *= 0.5f * (float)this.pictureBox1.Height;
+                    triProjected.p[2].x *= 0.5f * (float)this.pictureBox1.Width;
+                    triProjected.p[2].y *= 0.5f * (float)this.pictureBox1.Height;
 
-                    DrawTriangle(triProjected.p, col, g);
+                    depthBuffer.Add(triProjected);
                 }
+            }
+
+            SortTriangles(depthBuffer);
+            DrawTriangles(depthBuffer, g);
+        }
+
+
+
+        private void SortTriangles(List<Triangle> dB)
+        {
+            dB.Sort((Triangle tri1, Triangle tri2) =>
+            {
+                float z1 = (tri1.p[0].z + tri1.p[1].z + tri1.p[2].z) / 3.0f;
+                float z2 = (tri2.p[0].z + tri2.p[1].z + tri2.p[2].z) / 3.0f;
+
+                return z2.CompareTo(z1);
+            });
+        }
+
+
+
+        private void DrawTriangles(List<Triangle> dB, Graphics g)
+        {
+            foreach(Triangle tri in dB)
+            {
+                DrawTriangle(tri.p, tri.col, g);
             }
         }
 
@@ -321,45 +367,30 @@ namespace THPX_3D_Graphic_Engine
             pts[2].Y = (int)arg[2].y;
 
             g.FillPolygon(_b, pts);
-            g.DrawPolygon(_p, pts);
+            //g.DrawPolygon(_p, pts);
         }
 
 
-
-        private void Form1_Load(object sender, EventArgs e)
-        {
-            _meshCube.tris = new Triangle[] {
-                // South
-                new Triangle( new Vec3d(0, 0, 0), new Vec3d(0, 1, 0), new Vec3d(1, 1, 0)),
-                new Triangle( new Vec3d(1, 1, 0), new Vec3d(1, 0, 0), new Vec3d(0, 0, 0)),
-                // East
-                new Triangle( new Vec3d(1, 0, 0), new Vec3d(1, 1, 0), new Vec3d(1, 1, 1)),
-                new Triangle( new Vec3d(1, 1, 1),new Vec3d(1, 0, 1),new Vec3d(1, 0, 0)),
-                // North
-                new Triangle( new Vec3d(1, 0, 1), new Vec3d(1, 1, 1), new Vec3d(0, 1, 1)),
-                new Triangle( new Vec3d(0, 1, 1), new Vec3d(0, 0, 1), new Vec3d(1, 0, 1)),
-                // West
-                new Triangle( new Vec3d(0, 0, 1), new Vec3d(0, 1, 1), new Vec3d(0, 1, 0)),
-                new Triangle( new Vec3d(0, 1, 0), new Vec3d(0, 0, 0), new Vec3d(0, 0, 1)),
-                // Bottom
-                new Triangle( new Vec3d(0, 0, 0), new Vec3d(1, 0, 0), new Vec3d(1, 0, 1)),
-                new Triangle( new Vec3d(1, 0, 1), new Vec3d(0, 0, 1), new Vec3d(0, 0, 0)),
-                // Top
-                new Triangle( new Vec3d(0, 1, 0), new Vec3d(0, 1, 1), new Vec3d(1, 1, 1)),
-                new Triangle( new Vec3d(1, 1, 1), new Vec3d(1, 1, 0), new Vec3d(0, 1, 0)),
-            };
-        }
 
         private void pictureBox1_Paint(object sender, PaintEventArgs e)
         {
             OnEngineUpdate(_felapsed, e.Graphics);
         }
 
+
+
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
             this.Hide();
             this.Parent = null;
             e.Cancel = true;
+        }
+
+
+
+        private void LoadButton_Click(object sender, EventArgs e)
+        {
+            ObjMesh.tris = FileLoader.LoadObjFile();
         }
     }
 }
